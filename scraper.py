@@ -127,8 +127,14 @@ def get_player_gamelog(player_link):
                 data_type = player_game_data['data-stat']
                 data = player_game_data.text
                 player_game_data_temp[data_type] = data
-
-            gamelog.append(player_game_data_temp)
+            # game_result data type is if the game was won ("W") or 
+            # lost ("L"). If there is no game result, then the row
+            # contains a summary row for that season. We want to 
+            # ignore that row. The row will be None, so we can use
+            # a simple if statement to check if this is a summary row
+            if 'game_result' in player_game_data_temp.keys():
+                if player_game_data_temp: # i.e. this shit ain't None
+                    gamelog.append(player_game_data_temp)
     
     return gamelog
 
