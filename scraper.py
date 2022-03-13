@@ -1,96 +1,115 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+from datetime import datetime
 
-n=0
+
 all_data = []
-
 base_url = 'https://www.sports-reference.com'
-schools_url = '/cbb/schools/'
 
-schools = requests.get(base_url + schools_url).text
-schools_table = BeautifulSoup(schools, 'lxml').find("table", {"id": "schools"})
 
-schools = schools_table.find_all('tr')
+def get_all_schools():
 
-schools_data = []
-for school in schools:
-    n = n + 1
-    school_data_temp = {}
-    for school_data in school.find_all('td'):
-        data_type = school_data['data-stat']
-        data = school_data.text
-        school_data_temp[data_type] = data
-        if data_type == 'school_name':
-            school_data_temp['school_link'] = school_data.find('a')['href']
+    # Get schools page
+    schools_url = '/cbb/schools/'
+    schools = requests.get(base_url + schools_url).text
 
-    # schools_data.append(school_data_temp)
+    # Get schools table rows
+    schools_table = BeautifulSoup(schools, 'lxml').find("table", {"id": "schools"})
+    schools = schools_table.find_all('tr')
+
+    # Initialize output array
+    schools_data = []
+
+    # Loop through table rows, each row is one school
+    for school in schools:
+        school_data_temp = {}
+        # Loop through the row's cells
+        for school_data in school.find_all('td'):
+            # grab the type of statistic
+            data_type = school_data['data-stat']
+            # the actual data in cell
+            data = school_data.text
+            # update school data dict
+            school_data_temp[data_type] = data
+
+            # if data is the school name, grab the link
+            if data_type == 'school_name':
+                school_data_temp['school_link'] = school_data.find('a')['href']
+
+        schools_data.append(school_data_temp)
+
+    return schools_data
 
 # schools_df = pd.DataFrame(schools_data)
-    players_data = []
-    # Get roster for team
-    try:
-        print(f"Getting roster for team: {school_data_temp['school_name']}")
-        # Get seasons back to 2010
-        for year in range(2010, 2022):
-            print(f"Season: {year}")
-            test_url = f"{school_data_temp['school_link']}{year}.html"
+def get_roster(school_link, years=[datetime.now().strftime('%Y') if int(datetime.now().strftime('%m'))>10 else int(datetime.now().strftime('%Y'))-1]):
 
-            players_html = requests.get(base_url + test_url).text
-            roster_table = BeautifulSoup(players_html, 'lxml').find("table", {"id": "roster"})
+    # Initialize roster data
+    roster_data = []
 
-            players = roster_table.find_all('tr')
+    # Get seasons
+    for year in years:
+        print(f"Season: {year}")
+        test_url = f"{school_link}{year}.html"
 
-            # players_data = []
-            for player in players:
-                try:
-                    player_data_temp = {}
-                    try:
-                        p = player.find('th')
-                        player_data_temp[p['data-stat']] = p.text
-                        player_data_temp['player_link'] = p.find('a')['href']
-                    except Exception as e:
-                        pass
-                    if 'player_link' in player_data_temp.keys():
-                        for player_data in player.find_all('td'):
-                            data_type = player_data['data-stat']
-                            data = player_data.text
-                            player_data_temp[data_type] = data
-                            player_data_temp.update(school_data_temp)
-                        # players_data.append(player_data_temp)
+        # Get Team Roster page
+        players_html = requests.get(base_url + test_url).text
 
-                    
-                        #print(f"Getting data for player {player_data_temp['player']}")
-                        gamelog_url = player_data_temp['player_link'][:-5] + '/gamelog'
-                        player_games_html = requests.get(base_url + gamelog_url).text
-                        roster_table = BeautifulSoup(player_games_html, 'lxml').find("table", {"id": "gamelog"})
+        # Parse Roster table rows
+        roster_table = BeautifulSoup(players_html, 'lxml').find("table", {"id": "roster"})
+        roster = roster_table.find_all('tr')
 
-                        player_games = roster_table.find_all('tr')
+        for player in roster:
+            player_data_temp = {}
 
-                        player_games_data = []
-                        for player_game in player_games:
-                            player_game_data_temp = {}
+            # Not all players have a player link
+            # If they do not have  link, then we cannot get game-level data
+            # so they will be skipped
+            try:
+                p = player.find('th')
+                player_data_temp[p['data-stat']] = p.text
+                player_data_temp['player_link'] = p.find('a')['href']
+            except Exception as e:
+                print("Could not get player link...skipping player")
 
-                            for player_game_data in player_game.find_all('td'):
-                                data_type = player_game_data['data-stat']
-                                data = player_game_data.text
-                                player_game_data_temp[data_type] = data
-                                player_game_data_temp.update(player_data_temp)
-                            player_games_data.append(player_game_data_temp)
-                            all_data.append(player_game_data_temp)
-                except Exception as e:
-                    print("Error in player loop")
-                    print(e)
+            # Check if player has a link
+            if 'player_link' in player_data_temp.keys():
 
-    except Exception as e:
-        print("Error in school loop")
-        print(e)
+                # Get other player cells
+                for player_data in player.find_all('td'):
+                    data_type = player_data['data-stat']
+                    data = player_data.text
+                    player_data_temp[data_type] = data
 
-        
-    # if players_data:
-    #     players_df = pd.DataFrame(players_data).dropna()
-    #     print(players_df)
+                # Add player data to roster
+                roster_data.append(player_data_temp)
+    return roster_data
 
+def get_player_gamelog(player_link):       
 
-df = pd.DataFrame(all_data).dropna()
-df.to_csv('player_data.csv')
+    # Get gamelog page
+    gamelog_url = player_link[:-5] + '/gamelog'
+    gamelog_html = requests.get(base_url + gamelog_url).text
+
+    # Parse gamelog table rows
+    gamelog_table = BeautifulSoup(gamelog_html, 'lxml').find("table", {"id": "gamelog"})
+    player_games = gamelog_table.find_all('tr')
+
+    # Initialize gamelog array
+    gamelog = []
+
+    # Loop through each gamelog row
+    for player_game in player_games:
+
+        # Initialize game data dict
+        player_game_data_temp = {}
+
+        # Loop through gamelog row's cells
+        for player_game_data in player_game.find_all('td'):
+            data_type = player_game_data['data-stat']
+            data = player_game_data.text
+            player_game_data_temp[data_type] = data
+
+        gamelog.append(player_game_data_temp)
+    
+    return gamelog
