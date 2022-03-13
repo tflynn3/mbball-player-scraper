@@ -3,11 +3,13 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 
 
-all_data = []
 base_url = 'https://www.sports-reference.com'
-
-
 def get_all_schools():
+    """
+    This function collects all schools from the Men's NCAA Schools Table
+    at https://www.sports-reference.com/cbb/schools
+    returns: List of Dictionaries of table data
+    """
 
     # Get schools page
     schools_url = '/cbb/schools/'
@@ -42,7 +44,13 @@ def get_all_schools():
 
 # schools_df = pd.DataFrame(schools_data)
 def get_roster(school_link, years=[datetime.now().strftime('%Y') if int(datetime.now().strftime('%m'))<10 else int(datetime.now().strftime('%Y'))+1]):
-
+    """
+    This function scraps the roster table for a/the particular season(s) specified
+    parameters:
+     - schools_link (str): URL of the school. Can be scraped using the get_all_schools function
+     - years (list): List of the years of which to pull rosters
+     returns: List of Dictionaries with the roster table data
+    """
     # Initialize roster data
     roster_data = []
 
@@ -86,9 +94,15 @@ def get_roster(school_link, years=[datetime.now().strftime('%Y') if int(datetime
     return roster_data
 
 def get_player_gamelog(player_link):       
-
+    """
+    This function will scrap the gamelog for a specific player
+    parameters:
+     - plyer_link (str): URL for the player
+    returns: List of Dictionaries of the player gamelog (all games the player has played)
+    """
     # Get gamelog page
-    gamelog_url = player_link[:-5] + '/gamelog'
+    # Note: using full URL, so need to strip ".html"
+    gamelog_url = player_link.replace('.html', '') + '/gamelog'
     gamelog_html = requests.get(base_url + gamelog_url).text
 
     # Parse gamelog table rows
