@@ -1,6 +1,5 @@
 import requests
 from bs4 import BeautifulSoup
-import pandas as pd
 from datetime import datetime
 
 
@@ -121,6 +120,7 @@ def get_player_gamelog(player_link):
 
 
 if __name__ == "__main__":
+    import pandas as pd
 
     # Create a schools dataframe
     s = get_all_schools()
