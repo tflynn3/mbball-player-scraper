@@ -108,13 +108,13 @@ def get_player_gamelog(player_link):
     # Parse gamelog table rows
     gamelog_table = BeautifulSoup(gamelog_html, 'lxml').find("table", {"id": "gamelog"})
 
+    # Initialize gamelog array
+    gamelog = []
+
     # Some players have not played any games
     # Check for the gamelog table before getting rows
     if gamelog_table:
         player_games = gamelog_table.find_all('tr')
-
-        # Initialize gamelog array
-        gamelog = []
 
         # Loop through each gamelog row
         for player_game in player_games:
