@@ -1,9 +1,7 @@
-from pprint import pprint
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 from datetime import datetime
-import random
 
 
 all_data = []
