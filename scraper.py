@@ -78,7 +78,8 @@ def get_roster(school_link, years=[datetime.now().strftime('%Y') if int(datetime
                     player_data_temp[p['data-stat']] = p.text
                     player_data_temp['player_link'] = p.find('a')['href']
                 except Exception as e:
-                    print("Could not get player link...skipping player")
+                    #print("Could not get player link...skipping player")
+                    pass
 
                 # Check if player has a link
                 if 'player_link' in player_data_temp.keys():
