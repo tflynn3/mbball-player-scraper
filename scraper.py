@@ -56,41 +56,41 @@ def get_roster(school_link, years=[datetime.now().strftime('%Y') if int(datetime
 
     # Get seasons
     for year in years:
-        print(f"Season: {year}")
         season_roster_url = f"{school_link}{year}.html"
 
-        print(season_roster_url)
         # Get Team Roster page
         players_html = requests.get(base_url + season_roster_url).text
 
         # Parse Roster table rows
         roster_table = BeautifulSoup(players_html, 'lxml').find("table", {"id": "roster"})
-        roster = roster_table.find_all('tr')
+        # check if team has roster for this year
+        if roster_table:
+            roster = roster_table.find_all('tr')
 
-        for player in roster:
-            player_data_temp = {}
+            for player in roster:
+                player_data_temp = {}
 
-            # Not all players have a player link
-            # If they do not have  link, then we cannot get game-level data
-            # so they will be skipped
-            try:
-                p = player.find('th')
-                player_data_temp[p['data-stat']] = p.text
-                player_data_temp['player_link'] = p.find('a')['href']
-            except Exception as e:
-                print("Could not get player link...skipping player")
+                # Not all players have a player link
+                # If they do not have  link, then we cannot get game-level data
+                # so they will be skipped
+                try:
+                    p = player.find('th')
+                    player_data_temp[p['data-stat']] = p.text
+                    player_data_temp['player_link'] = p.find('a')['href']
+                except Exception as e:
+                    print("Could not get player link...skipping player")
 
-            # Check if player has a link
-            if 'player_link' in player_data_temp.keys():
+                # Check if player has a link
+                if 'player_link' in player_data_temp.keys():
 
-                # Get other player cells
-                for player_data in player.find_all('td'):
-                    data_type = player_data['data-stat']
-                    data = player_data.text
-                    player_data_temp[data_type] = data
+                    # Get other player cells
+                    for player_data in player.find_all('td'):
+                        data_type = player_data['data-stat']
+                        data = player_data.text
+                        player_data_temp[data_type] = data
 
-                # Add player data to roster
-                roster_data.append(player_data_temp)
+                    # Add player data to roster
+                    roster_data.append(player_data_temp)
     return roster_data
 
 def get_player_gamelog(player_link):       
