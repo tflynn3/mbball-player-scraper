@@ -1,7 +1,53 @@
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+import logging
+import time
 
+
+# setup logging
+logging.basicConfig(filename='ncaa.log', level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s')
+
+# log if used in a different file
+logging.info("Importing scraper.py")
+
+def make_request_with_retry_after(url):
+    """
+    This function makes a request to the specified url and sleeps for the
+    amount of time specified in the 'Retry-After' header
+    parameters:
+     - url (str): URL to make request to
+    returns: Response object
+    """
+    # sleep 2 second in attempt to avoid 429 error
+    time.sleep(1)
+
+    r = requests.get(url)
+    while r.status_code == 429:
+        # log if the retry-after header is not present
+        if 'Retry-After' not in r.headers.keys():
+            logging.info("No Retry-After header present")
+        else:
+            # log the retry wait time in a human readable format
+            # convert to hours, minutes, seconds if > 60 seconds or > 60 minutes
+            if int(r.headers['Retry-After']) > 60:
+                if int(r.headers['Retry-After']) > 3600:
+                    # log hours minutes and seconds
+                    logging.info(f"Waiting {int(r.headers['Retry-After'])/3600} hours {int(r.headers['Retry-After'])%60} minutes {int(r.headers['Retry-After'])%60} seconds")
+                else:
+                    logging.info(f"Waiting {int(r.headers['Retry-After'])/60} minutes {int(r.headers['Retry-After'])%60} seconds")
+            else:
+                logging.info(f"Waiting {r.headers['Retry-After']} seconds")
+
+        # parse the headers and sleep for the time specified in the 'Retry-After' header
+        time.sleep(int(r.headers['Retry-After']) + 10)
+        r = requests.get(url)
+        # log if request is not successful but not 429
+        if r.status_code != 200 and r.status_code != 429:
+            logging.error(f"Request not successful. Status code: {r.status_code}")
+            # raise an exception
+            raise Exception(f"Request not successful. Status code: {r.status_code}")
+    return r.text
 
 base_url = 'https://www.sports-reference.com'
 def get_all_schools():
@@ -13,10 +59,10 @@ def get_all_schools():
 
     # Get schools page
     schools_url = '/cbb/schools/'
-    schools = requests.get(base_url + schools_url).text
+    schools = make_request_with_retry_after(base_url + schools_url)
 
     # Get schools table rows
-    schools_table = BeautifulSoup(schools, 'lxml').find("table", {"id": "schools"})
+    schools_table = BeautifulSoup(schools, 'lxml').find("table", {"id": "NCAAM_schools"})
     schools = schools_table.find_all('tr')
 
     # Initialize output array
@@ -59,13 +105,17 @@ def get_roster(school_link, years=[datetime.now().strftime('%Y') if int(datetime
         season_roster_url = f"{school_link}{year}.html"
 
         # Get Team Roster page
-        players_html = requests.get(base_url + season_roster_url).text
+        players_html = make_request_with_retry_after(base_url + season_roster_url)
 
         # Parse Roster table rows
         roster_table = BeautifulSoup(players_html, 'lxml').find("table", {"id": "roster"})
+        # log
+        logging.info(f"Getting roster for {year}")
         # check if team has roster for this year
         if roster_table:
             roster = roster_table.find_all('tr')
+            # debug log number of rows
+            logging.debug(f"Number of rows: {len(roster)}")
 
             for player in roster:
                 player_data_temp = {}
@@ -79,7 +129,7 @@ def get_roster(school_link, years=[datetime.now().strftime('%Y') if int(datetime
                     player_data_temp['player_link'] = p.find('a')['href']
                 except Exception as e:
                     #print("Could not get player link...skipping player")
-                    pass
+                    logging.info(f"Could not get player link...skipping player: {e}")
 
                 # Check if player has a link
                 if 'player_link' in player_data_temp.keys():
@@ -92,7 +142,56 @@ def get_roster(school_link, years=[datetime.now().strftime('%Y') if int(datetime
 
                     # Add player data to roster
                     roster_data.append(player_data_temp)
+        else:
+            logging.error(f"Could not get roster at {base_url + season_roster_url}")
     return roster_data
+
+def get_basic_gamelog(school_link, years=[datetime.now().strftime('%Y') if int(datetime.now().strftime('%m'))<10 else int(datetime.now().strftime('%Y'))+1]):
+    """
+    This function will get the basic gamelog table from table id="sgl-basic"
+    parameters:
+     - team_link (str): URL for the team
+     - season (str): Year of the season
+    """
+
+    for year in years:
+        basic_gamelog_url = f"{school_link}{year}-gamelogs.html"
+
+        # Get Team Roster page
+        basic_gamelog_html = make_request_with_retry_after(base_url + basic_gamelog_url)
+
+        # Parse Roster table rows
+        basic_gamelog_table = BeautifulSoup(basic_gamelog_html, 'lxml').find("table", {"id": "sgl-basic"})
+        # log
+        logging.info(f"Getting basic gamelog for {year}")
+
+        basic_gamelogs = []
+        # check if team has roster for this year
+        if basic_gamelog_table:
+            # iterate over tbody from above example HTML basic_gamelog_table
+            # get the th data-stat and text value and store it in a dictionary
+            # the dictionary is then appended to the basic_gamelogs list
+            for row in basic_gamelog_table.find('tbody').find_all('tr'):
+                basic_gamelog_dict = {}
+                # check if tr id is like sgl-basic.20230128 where the end is the data
+                if row.has_attr('id') and row['id'].startswith('sgl-basic.'):
+                    # loop through th and td's 
+                    for cell in row.find_all(['th', 'td']):
+                        # check if the cell has a data-stat attribute
+                        if cell.has_attr('data-stat'):
+                            data_type = cell['data-stat']
+                            data = cell.text
+                            basic_gamelog_dict[data_type] = data
+                    # check if game_result key has a value
+                    if basic_gamelog_dict['game_result']:
+                        # delete key 'x' from dictionary
+                        del basic_gamelog_dict['x']
+                        # append the dictionary to the list
+                        basic_gamelogs.append(basic_gamelog_dict)
+        else:
+            logging.info(f"Could not get basic gamelog at {base_url + basic_gamelog_url}")
+
+    return basic_gamelogs
 
 def get_player_gamelog(player_link):       
     """
@@ -104,19 +203,21 @@ def get_player_gamelog(player_link):
     # Get gamelog page
     # Note: using full URL, so need to strip ".html"
     gamelog_url = player_link.replace('.html', '') + '/gamelog'
-    gamelog_html = requests.get(base_url + gamelog_url).text
+    gamelog_html = make_request_with_retry_after(base_url + gamelog_url)
 
     # Parse gamelog table rows
     gamelog_table = BeautifulSoup(gamelog_html, 'lxml').find("table", {"id": "gamelog"})
 
     # Initialize gamelog array
     gamelog = []
-
+    # log
+    logging.info(f"Getting gamelog for {player_link}")
     # Some players have not played any games
     # Check for the gamelog table before getting rows
     if gamelog_table:
         player_games = gamelog_table.find_all('tr')
-
+        # debug log number of rows
+        logging.debug(f"Number of games in gamelog: {len(player_games)}")
         # Loop through each gamelog row
         for player_game in player_games:
 
@@ -136,6 +237,8 @@ def get_player_gamelog(player_link):
             if 'game_result' in player_game_data_temp.keys():
                 if player_game_data_temp['game_result']: # i.e. this shit ain't None
                     gamelog.append(player_game_data_temp)
+    else:
+        logging.info(f"Could not get gamelog at {base_url + gamelog_url}")
     
     return gamelog
 
@@ -145,16 +248,23 @@ if __name__ == "__main__":
 
     # Create a schools dataframe
     s = get_all_schools()
-    schools_df = pd.DataFrame(s)
+    schools_df = pd.DataFrame(s).dropna()
     print(schools_df.head())
 
     # Get a random school
-    random_school = schools_df.sample().to_dict('records')[0] 
-    # Check if school played this year
-    while random_school['year_max'] != '2022':
+    random_school = schools_df.sample().to_dict('records')[0]
+    # while the school did not play in the current season i.e. year_max >= current_year
+    while not int(random_school['year_max']) >= int(datetime.now().strftime('%Y')):
         random_school = schools_df.sample().to_dict('records')[0]
 
+
     print(f'Randomly selected school: {random_school["school_name"]}')
+
+    # Get basic gamelog
+    b = get_basic_gamelog(random_school['school_link'])
+    basic_gamelog_df = pd.DataFrame(b)
+    # export to csv
+    basic_gamelog_df.to_csv('basic_gamelog.csv', index=False)
 
     # Get team roster
     r = get_roster(random_school["school_link"])
